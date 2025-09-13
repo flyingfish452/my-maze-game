@@ -2,40 +2,72 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>3D Kitten Maze with Lives</title>
+  <title>3D Kitten Maze with Simple Scoring</title>
   <style>
     body { background-color: #222; color: #fff; font-family: sans-serif; text-align: center; }
     canvas { display: block; margin: 20px auto; border: 2px solid #fff; background: #000; }
-    #score { font-size: 24px; margin-top: 10px; }
-    #lives { font-size: 24px; margin-top: 10px; color: orange; }
+    #score, #lives, #level, #timer, #highScore { font-size: 20px; margin: 5px; display: inline-block; }
     #message { display: none; font-size: 32px; color: lime; margin-top: 20px; }
   </style>
 </head>
 <body>
   <h1>😺 Kitten Maze 3D 😺</h1>
   <canvas id="gameCanvas" width="600" height="600"></canvas>
-  <div id="score">Coins: 0</div>
-  <div id="lives">Lives: 3</div>
+  <div>
+    <div id="score">Coins: 0</div>
+    <div id="lives">Lives: 3</div>
+    <div id="level">Level: 1</div>
+    <div id="timer">Time: 0</div>
+    <div id="highScore">High Score: 0</div>
+  </div>
   <div id="message">🎉 Well done! Loading new maze...</div>
 
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
 
-    const CELL_SIZE = 40, MAZE_WIDTH = 15, MAZE_HEIGHT = 15, NUM_COINS = 10;
+    let CELL_SIZE = 40, MAZE_WIDTH = 15, MAZE_HEIGHT = 15, NUM_COINS = 10;
     const WALL_COLOR = "#888", PATH_COLOR = "#222", COIN_COLOR = "#FFD700";
 
     const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
     let maze = [], coins = new Set();
     let catX = 1, catY = 1, targetX = 1, targetY = 1, animX = 1, animY = 1;
-    let score = 0, isMoving = false, lives = 3;
+    let score = 0, isMoving = false, lives = 3, level = 1, timeLeft = 0, timerInterval = null;
+    let highScore = localStorage.getItem("kittenHighScore") || 0;
+    let sparkleFrame = 0;
+    let flashTimer = 0;
 
     function resetGame() {
+      level = 1; score = 0; lives = 3; CELL_SIZE = 40; MAZE_WIDTH = 15; MAZE_HEIGHT = 15; NUM_COINS = 10;
+      startLevel();
+    }
+
+    function startLevel() {
       maze = []; coins.clear();
-      catX = 1; catY = 1; targetX = 1; targetY = 1; animX = 1; animY = 1; score = 0; isMoving = false; lives = 3;
+      catX = 1; catY = 1; targetX = 1; targetY = 1; animX = 1; animY = 1; isMoving = false; sparkleFrame = 0;
       document.getElementById("message").style.display = "none";
-      generateMaze(); placeCoins(); updateScore(); updateLives();
+      generateMaze(); placeCoins(); updateScore(); updateLives(); updateLevel(); startTimer();
+    }
+
+    function nextLevel() {
+      level++;
+      MAZE_WIDTH += 2; MAZE_HEIGHT += 2; CELL_SIZE = Math.max(30, CELL_SIZE - 2); NUM_COINS += 3;
+      startLevel();
+    }
+
+    function startTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timeLeft = 30 + level * 5;
+      document.getElementById("timer").textContent = `Time: ${timeLeft}`;
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        document.getElementById("timer").textContent = `Time: ${timeLeft}`;
+        if (timeLeft <= 0) {
+          clearInterval(timerInterval);
+          loseLife();
+        }
+      }, 1000);
     }
 
     function generateMaze() {
@@ -64,6 +96,8 @@
     }
 
     function drawMaze() {
+      canvas.width = MAZE_WIDTH * CELL_SIZE;
+      canvas.height = MAZE_HEIGHT * CELL_SIZE;
       for (let y = 0; y < MAZE_HEIGHT; y++) for (let x = 0; x < MAZE_WIDTH; x++) {
         if (maze[y][x] === 1) {
           const gx = x * CELL_SIZE, gy = y * CELL_SIZE;
@@ -79,14 +113,16 @@
     }
 
     function drawCoins() {
+      sparkleFrame += 0.05;
+      const scale = 0.8 + 0.15 * Math.sin(sparkleFrame);
       for (let pos of coins) {
         const [x, y] = pos.split(",").map(Number);
         const cx = x * CELL_SIZE + CELL_SIZE / 2, cy = y * CELL_SIZE + CELL_SIZE / 2;
         ctx.beginPath();
-        ctx.arc(cx, cy, CELL_SIZE / 4, 0, Math.PI * 2);
+        ctx.arc(cx, cy, (CELL_SIZE / 4) * scale, 0, Math.PI * 2);
         ctx.fillStyle = COIN_COLOR;
         ctx.fill();
-        ctx.strokeStyle = "#fff";
+        ctx.strokeStyle = `rgba(255,255,255,${0.5 + 0.5 * Math.sin(sparkleFrame)})`;
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -95,7 +131,14 @@
     function drawCat(x, y) {
       const cx = x * CELL_SIZE + CELL_SIZE / 2, cy = y * CELL_SIZE + CELL_SIZE / 2;
       ctx.font = `${CELL_SIZE - 8}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("😺", cx, cy);
+      if (flashTimer > 0) {
+        ctx.fillStyle = "red";
+        ctx.fillText("😺", cx, cy);
+        flashTimer--;
+      } else {
+        ctx.fillStyle = "white";
+        ctx.fillText("😺", cx, cy);
+      }
     }
 
     function draw() {
@@ -105,27 +148,40 @@
 
     function updateScore() {
       document.getElementById("score").textContent = `Coins: ${score}`;
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem("kittenHighScore", highScore);
+      }
+      document.getElementById("highScore").textContent = `High Score: ${highScore}`;
     }
 
     function updateLives() {
       document.getElementById("lives").textContent = `Lives: ${lives}`;
     }
 
+    function updateLevel() {
+      document.getElementById("level").textContent = `Level: ${level}`;
+    }
+
     function checkWin() {
       if (coins.size === 0) {
-        document.getElementById("message").textContent = "🎉 Well done! Loading new maze...";
+        document.getElementById("message").textContent = "🎉 Well done! Next level!";
         document.getElementById("message").style.display = "block";
-        setTimeout(resetGame, 2000);
+        setTimeout(nextLevel, 2000);
       }
     }
 
     function loseLife() {
       lives--;
+      flashTimer = 15;
       updateLives();
       if (lives <= 0) {
-        document.getElementById("message").textContent = "😅 Try again silly billy!";
+        document.getElementById("message").textContent = "😅 Out of lives! New maze!";
         document.getElementById("message").style.display = "block";
-        setTimeout(resetGame, 2000);
+        setTimeout(() => {
+          lives = 3;
+          startLevel();
+        }, 2000);
       }
     }
 
@@ -142,7 +198,11 @@
     window.addEventListener("keydown", e => {
       if (isMoving) return;
       let nx = catX, ny = catY;
-      if (e.key === "ArrowLeft") nx--; if (e.key === "ArrowRight") nx++; if (e.key === "ArrowUp") ny--; if (e.key === "ArrowDown") ny++;
+      if (e.key === "a" || e.key === "A") nx--;
+      if (e.key === "d" || e.key === "D") nx++;
+      if (e.key === "w" || e.key === "W") ny--;
+      if (e.key === "s" || e.key === "S") ny++;
+
       if (nx < 0 || nx >= MAZE_WIDTH || ny < 0 || ny >= MAZE_HEIGHT || maze[ny][nx] === 1) {
         loseLife();
         return;
@@ -151,7 +211,7 @@
       catX = nx; catY = ny; targetX = nx; targetY = ny; isMoving = true;
       if (coins.has(posKey)) {
         coins.delete(posKey);
-        score++;
+        score += 1; // each coin is now worth 1 point only
         updateScore();
         checkWin();
       }
